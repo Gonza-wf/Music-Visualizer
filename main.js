@@ -9,10 +9,11 @@ import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
 // 1. AUDIO & APP STATE
 // ==========================================
 // Settings State
-let isBlackAndWhite = false;
+let isStrobeEnabled = true;
+let isBlackAndWhite = true;
 let flashDecay = 0.88;
 let bassSensMult = 1.0;
-let glowStrength = 0.3;
+let glowStrength = 0.1;
 let cameraSpeedMult = 1.0;
 
 // Performance Presets
@@ -70,27 +71,42 @@ const sliderFlash = document.getElementById('slider-flash');
 const sliderBass = document.getElementById('slider-bass');
 const sliderGlow = document.getElementById('slider-glow');
 const sliderCam = document.getElementById('slider-cam');
-const btnResetSettings = document.getElementById('btn-reset-settings');
-
 const valFlash = document.getElementById('val-flash');
+sliderFlash.addEventListener('input', (e) => {
+  flashDecay = parseFloat(e.target.value);
+  valFlash.textContent = flashDecay.toFixed(2);
+});
+
+const sliderBass = document.getElementById('slider-bass');
 const valBass = document.getElementById('val-bass');
+sliderBass.addEventListener('input', (e) => {
+  bassSensMult = parseFloat(e.target.value);
+  valBass.textContent = bassSensMult.toFixed(1);
+});
+
+const sliderGlow = document.getElementById('slider-glow');
 const valGlow = document.getElementById('val-glow');
+sliderGlow.addEventListener('input', (e) => {
+  glowStrength = parseFloat(e.target.value);
+  valGlow.textContent = glowStrength.toFixed(2);
+});
+
+const sliderCam = document.getElementById('slider-cam');
 const valCam = document.getElementById('val-cam');
+sliderCam.addEventListener('input', (e) => {
+  cameraSpeedMult = parseFloat(e.target.value);
+  valCam.textContent = cameraSpeedMult.toFixed(1);
+});
 
-toggleBwMode.addEventListener('change', (e) => isBlackAndWhite = e.target.checked);
-sliderFlash.addEventListener('input', (e) => { flashDecay = parseFloat(e.target.value); valFlash.textContent = flashDecay.toFixed(2); });
-sliderBass.addEventListener('input', (e) => { bassSensMult = parseFloat(e.target.value); valBass.textContent = bassSensMult.toFixed(1); });
-sliderGlow.addEventListener('input', (e) => { glowStrength = parseFloat(e.target.value); valGlow.textContent = glowStrength.toFixed(2); });
-sliderCam.addEventListener('input', (e) => { cameraSpeedMult = parseFloat(e.target.value); valCam.textContent = cameraSpeedMult.toFixed(1); });
-
-btnResetSettings.addEventListener('click', () => {
-  isBlackAndWhite = false; toggleBwMode.checked = false;
+document.getElementById('btn-reset-settings').addEventListener('click', () => {
+  isStrobeEnabled = true; toggleStrobe.checked = true;
+  isBlackAndWhite = true; toggleBw.checked = true;
   flashDecay = 0.88; sliderFlash.value = 0.88; valFlash.textContent = "0.88";
   bassSensMult = 1.0; sliderBass.value = 1.0; valBass.textContent = "1.0";
-  glowStrength = 0.3; sliderGlow.value = 0.3; valGlow.textContent = "0.30";
+  glowStrength = 0.1; sliderGlow.value = 0.1; valGlow.textContent = "0.10";
   cameraSpeedMult = 1.0; sliderCam.value = 1.0; valCam.textContent = "1.0";
   applyPreset('high');
-});
+});;
 
 // --- Quality Preset Logic ---
 const presetBtns = {
@@ -560,30 +576,32 @@ void main() {
   vNormal = normal;
   
   // 1. Base Low-Frequency Breathing (Fluidity)
-  // uMid adds a gentle expansion/contraction
-  float baseNoise = snoise(position * 0.3 + uTime * 0.15);
-  float breath = baseNoise * (0.2 + uMid * 0.4);
+  float baseNoise = snoise(position * 0.25 + uTime * 0.1);
+  float breath = baseNoise * (0.1 + uMid * 0.3);
   
   // 2. Directional Stretching & Squishing (Beat Impact)
-  // Reduced bass sensitivity based on feedback
-  float stretchIntensity = smoothstep(0.4, 0.9, uBass) * (0.4 + uBeat * 0.8);
+  // More fluid, less spiky. Uses a smoother curve for bass impact.
+  float stretchIntensity = smoothstep(0.4, 0.9, uBass) * (0.3 + uBeat * 0.6);
   vec3 stretchPos = position;
-  stretchPos.y *= 1.0 + stretchIntensity * 1.2;
-  stretchPos.x *= 1.0 - stretchIntensity * 0.2;
-  stretchPos.z *= 1.0 - stretchIntensity * 0.2;
+  stretchPos.y *= 1.0 + stretchIntensity * 0.8;
+  stretchPos.x *= 1.0 - stretchIntensity * 0.15;
+  stretchPos.z *= 1.0 - stretchIntensity * 0.15;
   
   // 3. Mid-Frequency Warping (Torsion/Twist)
-  float warpNoise = snoise(stretchPos * 0.8 - uTime * 0.4);
-  float warp = warpNoise * (uEnergy * 0.5 + 0.1) * (1.0 + uBeat * 0.4);
+  // Smoother warp that feels like water
+  float warpNoise = snoise(stretchPos * 0.6 - uTime * 0.3);
+  float warp = warpNoise * (uEnergy * 0.4) * (1.0 + uBeat * 0.3);
   
   // 4. High-Frequency Ripples (Treble Detail)
-  float trebleRipples = snoise(position * 2.5 + uTime * 1.5) * uTreble * 0.25;
+  // Significantly reduced so it doesn't look like ugly thorns on drops
+  float trebleRipples = snoise(position * 1.5 + uTime * 2.0) * uTreble * 0.15;
   
-  // Combine all deformations
+  // Combine all deformations (clamped to prevent extreme breaking of geometry)
   float totalDisp = breath + warp + trebleRipples;
+  totalDisp = clamp(totalDisp, -0.6, 0.8);
   
   // 5. Global Scale (Volume/Bass Impact)
-  float globalScale = 1.0 + stretchIntensity * 0.15 + (uEnergy * 0.05);
+  float globalScale = 1.0 + stretchIntensity * 0.1 + (uEnergy * 0.05);
   
   vDisplacement = totalDisp;
   vPosition = position;
@@ -852,18 +870,23 @@ function animate() {
   particles.scale.set(pScale, pScale, pScale);
 
   // --- BACKGROUND STROBE DECAY & APPLY ---
-  if (isBlackAndWhite) {
-    bgPlaneMat.color.setHex(0xffffff);
+  if (isStrobeEnabled) {
+    if (isBlackAndWhite) {
+      bgPlaneMat.color.setHex(0xffffff);
+    } else {
+      bgPlaneMat.color.copy(strobeColors[lastStrobeColor]);
+    }
+    bgPlaneMat.opacity = bgFlashOpacity;
   } else {
-    bgPlaneMat.color.copy(strobeColors[lastStrobeColor]);
+    bgPlaneMat.opacity = 0;
   }
-  bgPlaneMat.opacity = bgFlashOpacity;
+  
   bgFlashOpacity *= flashDecay; // Decay based on slider (0.75 fast - 0.99 slow)
   if (bgFlashOpacity < 0.01) bgFlashOpacity = 0;
 
   // Also tint the scene background slightly
   const bgColor = new THREE.Color(0x000000);
-  if (bgFlashOpacity > 0.05) {
+  if (bgFlashOpacity > 0.05 && isStrobeEnabled) {
     if (isBlackAndWhite) {
       bgColor.setHex(0xffffff).multiplyScalar(bgFlashOpacity * 0.3);
     } else {
