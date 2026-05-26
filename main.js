@@ -17,7 +17,7 @@ let cameraSpeedMult = 1.0;
 
 // Performance Presets
 const isMobile = /Android|iPhone|iPad|iPod|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
-let currentPreset = isMobile ? 'low' : 'mid';
+let currentPreset = 'high';
 
 const PRESETS = {
   low:   { pixelRatio: 1.0,  geoDetail: 16, particles: 500,  bloom: false, wireframe: false, rgbShift: false },
@@ -89,7 +89,7 @@ btnResetSettings.addEventListener('click', () => {
   bassSensMult = 1.0; sliderBass.value = 1.0; valBass.textContent = "1.0";
   glowStrength = 0.3; sliderGlow.value = 0.3; valGlow.textContent = "0.30";
   cameraSpeedMult = 1.0; sliderCam.value = 1.0; valCam.textContent = "1.0";
-  applyPreset(isMobile ? 'low' : 'mid');
+  applyPreset('high');
 });
 
 // --- Quality Preset Logic ---
@@ -176,14 +176,23 @@ mobileSettingsBtn.addEventListener('click', () => {
   settingsSidebar.classList.add('open');
   mobileSettingsBtn.style.display = 'none';
 });
-closePlaylistBtn.addEventListener('click', () => {
+function closePlaylist(e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
   sidebar.classList.remove('open');
   mobilePlaylistBtn.style.display = '';
-});
-closeSettingsBtn.addEventListener('click', () => {
+}
+
+function closeSettings(e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
   settingsSidebar.classList.remove('open');
   mobileSettingsBtn.style.display = '';
-});
+}
+
+closePlaylistBtn.addEventListener('click', closePlaylist);
+closePlaylistBtn.addEventListener('touchstart', closePlaylist, {passive: false});
+
+closeSettingsBtn.addEventListener('click', closeSettings);
+closeSettingsBtn.addEventListener('touchstart', closeSettings, {passive: false});
 
 document.getElementById('canvas-container').addEventListener('click', () => {
   sidebar.classList.remove('open');
