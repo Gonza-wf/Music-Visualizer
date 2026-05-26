@@ -1,9 +1,14 @@
-const CACHE_NAME = 'techno-vis-v5';
+const CACHE_NAME = 'techno-vis-v6';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './main.js',
+  './audio.js',
+  './visualizer.js',
+  './ui.js',
+  './settings.js',
+  './storage.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
