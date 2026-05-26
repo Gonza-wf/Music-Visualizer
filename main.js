@@ -561,32 +561,29 @@ void main() {
   
   // 1. Base Low-Frequency Breathing (Fluidity)
   // uMid adds a gentle expansion/contraction
-  float baseNoise = snoise(position * 0.4 + uTime * 0.15);
-  float breath = baseNoise * (0.2 + uMid * 0.5);
+  float baseNoise = snoise(position * 0.3 + uTime * 0.15);
+  float breath = baseNoise * (0.2 + uMid * 0.4);
   
   // 2. Directional Stretching & Squishing (Beat Impact)
-  // On heavy bass, stretch it vertically (y) and compress horizontally (x, z)
-  float stretchIntensity = smoothstep(0.3, 0.9, uBass) * (0.8 + uBeat * 1.5);
+  // Reduced bass sensitivity based on feedback
+  float stretchIntensity = smoothstep(0.4, 0.9, uBass) * (0.4 + uBeat * 0.8);
   vec3 stretchPos = position;
   stretchPos.y *= 1.0 + stretchIntensity * 1.2;
   stretchPos.x *= 1.0 - stretchIntensity * 0.2;
   stretchPos.z *= 1.0 - stretchIntensity * 0.2;
   
   // 3. Mid-Frequency Warping (Torsion/Twist)
-  // Adds a flowing, vortex-like feel based on energy
   float warpNoise = snoise(stretchPos * 0.8 - uTime * 0.4);
-  float warp = warpNoise * (uEnergy * 0.6 + 0.1) * (1.0 + uBeat * 0.5);
+  float warp = warpNoise * (uEnergy * 0.5 + 0.1) * (1.0 + uBeat * 0.4);
   
   // 4. High-Frequency Ripples (Treble Detail)
-  // Only appears sharply when hi-hats or snares hit
-  float trebleRipples = snoise(position * 2.5 + uTime * 1.5) * uTreble * 0.3;
+  float trebleRipples = snoise(position * 2.5 + uTime * 1.5) * uTreble * 0.25;
   
   // Combine all deformations
   float totalDisp = breath + warp + trebleRipples;
   
   // 5. Global Scale (Volume/Bass Impact)
-  // The entire object pumps to the beat, getting physically larger
-  float globalScale = 1.0 + stretchIntensity * 0.2 + (uEnergy * 0.1);
+  float globalScale = 1.0 + stretchIntensity * 0.15 + (uEnergy * 0.05);
   
   vDisplacement = totalDisp;
   vPosition = position;
@@ -630,9 +627,9 @@ void main() {
   float saturation = 0.85;
   
   // Brightness: dark base, brightens with energy but NEVER goes white
-  // Max value ~0.7 so bloom doesn't blow it out
-  float value = 0.15 + uBass * 0.35 + vDisplacement * 0.08;
-  value = clamp(value, 0.05, 0.65);
+  // Max value ~0.55 so bloom doesn't blow it out (Reduced brightness)
+  float value = 0.12 + uBass * 0.2 + vDisplacement * 0.04;
+  value = clamp(value, 0.05, 0.55);
   
   vec3 color = hsv2rgb(vec3(hue, saturation, value));
   
@@ -892,8 +889,8 @@ function animate() {
   }
 
   // --- Post Processing ---
-  // Bloom: controlled by slider + bass boost
-  bloomPass.strength = glowStrength + smoothBass * 0.4 * (glowStrength / 0.3);
+  // Bloom: controlled by slider + reduced bass boost to prevent blinding flashes
+  bloomPass.strength = glowStrength + smoothBass * 0.15 * (glowStrength / 0.3);
 
   // RGB shift: EXTREME glitch effect ONLY on sharp treble hits (claps/snares)
   const targetShift = (smoothTreble * 0.002) + (trebleDelta > 0.03 ? trebleDelta * 0.15 : 0.0);
