@@ -28,7 +28,9 @@ export function createSettingsManager(initial = {}) {
   const state = {
     ...DEFAULT_SETTINGS,
     ...initial,
-    preset: initial.preset || getDefaultPreset()
+    preset: initial.preset ?? getDefaultPreset(),
+    isStrobeEnabled: initial.isStrobeEnabled ?? DEFAULT_SETTINGS.isStrobeEnabled,
+    isBlackAndWhite: initial.isBlackAndWhite ?? DEFAULT_SETTINGS.isBlackAndWhite
   };
 
   const listeners = new Set();

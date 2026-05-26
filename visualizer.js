@@ -62,6 +62,8 @@ uniform float uMid;
 uniform float uTreble;
 uniform float uEnergy;
 uniform float uBeat;
+uniform float uBeatPhase;
+uniform float uBeatPulse;
 
 varying vec3 vNormal;
 varying float vDisplacement;
@@ -72,32 +74,38 @@ ${NOISE_CHUNK}
 void main() {
   vNormal = normal;
 
-  float baseNoise = snoise(position * 0.25 + uTime * 0.1);
-  float breath = baseNoise * (0.1 + uMid * 0.3);
+  // Menos movimiento continuo cuando hay pulso rítmico activo
+  float drift = mix(0.12, 0.04, uBeatPulse);
+  float baseNoise = snoise(position * 0.25 + uTime * drift);
+  float breath = baseNoise * (0.08 + uMid * 0.22);
 
-  float stretchIntensity = smoothstep(0.4, 0.9, uBass) * (0.3 + uBeat * 0.6);
+  // Kick: pico instantáneo al downbeat, caída cuantizada por fase
+  float kickShape = pow(max(0.0, 1.0 - uBeatPhase), 2.5) * uBeatPulse;
+  float stretchIntensity = smoothstep(0.35, 0.85, uBass) * (0.25 + uBeat * 0.35);
+  stretchIntensity += kickShape * 0.85;
+
   vec3 stretchPos = position;
-  stretchPos.y *= 1.0 + stretchIntensity * 0.8;
-  stretchPos.x *= 1.0 - stretchIntensity * 0.15;
-  stretchPos.z *= 1.0 - stretchIntensity * 0.15;
+  stretchPos.y *= 1.0 + stretchIntensity * 0.9;
+  stretchPos.x *= 1.0 - stretchIntensity * 0.18;
+  stretchPos.z *= 1.0 - stretchIntensity * 0.18;
 
-  float warpNoise = snoise(stretchPos * 0.6 - uTime * 0.3);
-  float warp = warpNoise * (uEnergy * 0.4) * (1.0 + uBeat * 0.3);
+  float warpNoise = snoise(stretchPos * 0.6 - uTime * 0.25);
+  float warp = warpNoise * (uEnergy * 0.35) * (1.0 + kickShape * 0.5);
 
-  float trebleRipples = snoise(position * 1.5 + uTime * 2.0) * uTreble * 0.15;
+  float trebleRipples = snoise(position * 1.5 + uTime * 2.0) * uTreble * 0.12;
 
   float totalDisp = breath + warp + trebleRipples;
   totalDisp = clamp(totalDisp, -0.6, 0.8);
 
-  float globalScale = 1.0 + stretchIntensity * 0.1 + (uEnergy * 0.05);
+  float globalScale = 1.0 + kickShape * 0.12 + stretchIntensity * 0.06;
 
   vDisplacement = totalDisp;
   vPosition = position;
 
   vec3 newPosition = position * globalScale + normal * totalDisp;
-  newPosition.y *= 1.0 + stretchIntensity * 0.3;
-  newPosition.x *= 1.0 - stretchIntensity * 0.1;
-  newPosition.z *= 1.0 - stretchIntensity * 0.1;
+  newPosition.y *= 1.0 + stretchIntensity * 0.35;
+  newPosition.x *= 1.0 - stretchIntensity * 0.12;
+  newPosition.z *= 1.0 - stretchIntensity * 0.12;
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
 }
@@ -111,6 +119,8 @@ uniform float uTreble;
 uniform float uEnergy;
 uniform float uOpacity;
 uniform float uBeat;
+uniform float uBeatPhase;
+uniform float uBeatPulse;
 
 varying vec3 vNormal;
 varying float vDisplacement;
@@ -123,16 +133,17 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 void main() {
-  float hue = fract(uTime * 0.04 + vDisplacement * 0.08 + uBeat * 0.15);
+  // Salto de tono en el beat, no deriva continua
+  float hue = fract(uBeatPhase * 0.08 + vDisplacement * 0.08 + uBeat * 0.2);
   float saturation = 0.85;
-  float value = 0.12 + uBass * 0.2 + vDisplacement * 0.04;
+  float value = 0.12 + uBass * 0.15 + uBeatPulse * 0.18 + vDisplacement * 0.04;
   value = clamp(value, 0.05, 0.55);
 
   vec3 color = hsv2rgb(vec3(hue, saturation, value));
 
   float rim = 1.0 - max(dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0);
   rim = smoothstep(0.65, 1.0, rim);
-  color += color * rim * 0.4;
+  color += color * rim * (0.3 + uBeatPulse * 0.3);
 
   gl_FragColor = vec4(color, uOpacity);
 }
@@ -190,7 +201,9 @@ export function createVisualizer(container, settingsManager) {
       uTreble: { value: 0 },
       uEnergy: { value: 0 },
       uOpacity: { value: 1.0 },
-      uBeat: { value: 0 }
+      uBeat: { value: 0 },
+      uBeatPhase: { value: 0 },
+      uBeatPulse: { value: 0 }
     },
     transparent: true
   });
@@ -271,48 +284,64 @@ export function createVisualizer(container, settingsManager) {
     meshMat.uniforms.uMid.value = mid;
     meshMat.uniforms.uTreble.value = treble;
     meshMat.uniforms.uEnergy.value = energy;
-    meshMat.uniforms.uBeat.value = beat;
+    meshMat.uniforms.uBeat.value = beat.currentBeat;
+    meshMat.uniforms.uBeatPhase.value = beat.beatPhase;
+    meshMat.uniforms.uBeatPulse.value = beat.beatPulse;
   }
 
   function animate(audioEngine) {
     animationId = requestAnimationFrame(() => animate(audioEngine));
 
+    const delta = clock.getDelta();
     const time = clock.getElapsedTime();
     const settings = settingsManager.get();
-    const { bass, mid, treble } = audioEngine.getFrequencyBands();
+    const bands = audioEngine.getFrequencyBands();
     const isPlaying = audioEngine.getIsPlaying();
 
-    smoothBass = THREE.MathUtils.lerp(smoothBass, bass, 0.18);
-    smoothMid = THREE.MathUtils.lerp(smoothMid, mid, 0.12);
-    smoothTreble = THREE.MathUtils.lerp(smoothTreble, treble, 0.14);
+    // Suavizado distinto por banda: bajos más rápidos para no perder el kick
+    smoothBass = THREE.MathUtils.lerp(smoothBass, bands.rawBass, isPlaying ? 0.35 : 0.18);
+    smoothMid = THREE.MathUtils.lerp(smoothMid, bands.rawMid, 0.14);
+    smoothTreble = THREE.MathUtils.lerp(smoothTreble, bands.rawTreble, 0.2);
 
-    const energy = (smoothBass + smoothMid + smoothTreble) / 3;
-    const beat = audioEngine.beatDetector.update(bass, treble, time, isPlaying);
+    const beat = audioEngine.beatDetector.update(bands.rawBass, bands.rawTreble, time, isPlaying, delta);
 
-    if (beat.isBeat) {
-      const flashIntensity = THREE.MathUtils.clamp(bass * 2.0, 0.5, 0.95);
+    // Mezcla rítmica: pulso del beat + componente instantánea del kick
+    const rhythmBass = Math.max(smoothBass, beat.kickBass, beat.beatPulse * bands.rawBass);
+    const rhythmMid = smoothMid + beat.rhythmWave * 0.08 + beat.offbeatPulse * 0.15;
+    const energy = (rhythmBass + rhythmMid + smoothTreble) / 3;
+
+    if (beat.isBeat && settings.isStrobeEnabled) {
+      const flashIntensity = THREE.MathUtils.clamp(bands.rawBass * 2.0, 0.5, 0.95);
       bgFlashOpacity = Math.max(bgFlashOpacity, flashIntensity);
       lastStrobeColor = Math.floor(Math.random() * STROBE_COLORS.length);
     }
 
-    updateUniforms(material, time, smoothBass, smoothMid, smoothTreble, energy, beat.currentBeat);
-    updateUniforms(wireMaterial, time, smoothBass, smoothMid, smoothTreble, energy, beat.currentBeat);
-    wireMaterial.uniforms.uOpacity.value = 0.05 + smoothTreble * 0.35;
+    updateUniforms(material, time, rhythmBass, rhythmMid, smoothTreble, energy, beat);
+    updateUniforms(wireMaterial, time, rhythmBass, rhythmMid, smoothTreble, energy, beat);
+    wireMaterial.uniforms.uOpacity.value = 0.05 + smoothTreble * 0.35 + beat.offbeatPulse * 0.2;
 
-    const targetScale = 1.0 + smoothBass * 0.4 + beat.currentBeat * 0.4;
-    const currentScale = visualizerMesh.scale.x;
-    const newScale = THREE.MathUtils.lerp(currentScale, targetScale, beat.currentBeat > 0.5 ? 0.5 : 0.15);
-    visualizerMesh.scale.setScalar(newScale);
-    wireMesh.scale.setScalar(newScale * (1.02 + smoothTreble * 0.15));
+    // Escala: ataque instantáneo en el beat, decaimiento sincronizado al BPM
+    const baseScale = 1.0 + rhythmBass * 0.2 + beat.rhythmWave * 0.1;
+    const punchScale = baseScale + beat.beatPulse * 0.5 + beat.currentBeat * 0.25;
+    if (beat.isBeat) {
+      visualizerMesh.scale.setScalar(Math.max(visualizerMesh.scale.x, punchScale));
+    } else {
+      const interval = 60 / beat.estimatedBPM;
+      const decay = Math.pow(0.001, delta / (interval * 0.4));
+      visualizerMesh.scale.setScalar(THREE.MathUtils.lerp(punchScale, visualizerMesh.scale.x, decay));
+    }
+    wireMesh.scale.setScalar(visualizerMesh.scale.x * (1.02 + smoothTreble * 0.12 + beat.offbeatPulse * 0.08));
 
+    // Rotación: menos deriva continua, más empuje cuantizado por beat
+    const ambient = isPlaying ? 0.3 : 1.0;
     const rTime = time * settings.cameraSpeedMult;
-    visualizerMesh.rotation.x = rTime * 0.08 + smoothBass * 0.3 + beat.extraRotation;
-    visualizerMesh.rotation.y = rTime * 0.12 + smoothMid * 0.2 + beat.extraRotation * 1.2;
-    wireMesh.rotation.x = rTime * 0.09 + smoothBass * 0.3 + beat.extraRotation * 1.1;
-    wireMesh.rotation.y = rTime * 0.11 + smoothMid * 0.2 + beat.extraRotation * 1.3;
+    visualizerMesh.rotation.x = rTime * 0.06 * ambient + rhythmBass * 0.25 + beat.beatRotation;
+    visualizerMesh.rotation.y = rTime * 0.08 * ambient + rhythmMid * 0.15 + beat.beatRotation * 1.3 + beat.extraRotation;
+    wireMesh.rotation.x = visualizerMesh.rotation.x * 1.05;
+    wireMesh.rotation.y = visualizerMesh.rotation.y * 1.05;
 
-    particles.rotation.y = rTime * 0.03;
-    const pScale = 1.0 + smoothBass * 1.5;
+    particles.rotation.y = rTime * 0.025 * ambient + beat.beatRotation * 0.5;
+    const pScale = 1.0 + rhythmBass * 1.2 + beat.beatPulse * 0.3;
     particles.scale.set(pScale, pScale, pScale);
 
     if (settings.isStrobeEnabled) {
@@ -332,12 +361,12 @@ export function createVisualizer(container, settingsManager) {
     }
     scene.background = bgColor;
 
-    const targetFov = 70 + smoothBass * 10 + beat.currentBeat * 40;
+    const targetFov = 70 + rhythmBass * 8 + beat.beatPulse * 35 + beat.currentBeat * 20;
     camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.15);
     camera.updateProjectionMatrix();
 
-    if (smoothBass > 0.7) {
-      const shake = (smoothBass - 0.7) * 1.5;
+    if (rhythmBass > 0.65 && beat.beatPulse > 0.2) {
+      const shake = (rhythmBass - 0.65) * beat.beatPulse * 2.0;
       camera.position.x = (Math.random() - 0.5) * shake;
       camera.position.y = (Math.random() - 0.5) * shake;
     } else {
@@ -345,7 +374,7 @@ export function createVisualizer(container, settingsManager) {
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0, 0.1);
     }
 
-    bloomPass.strength = settings.glowStrength + smoothBass * 0.15 * (settings.glowStrength / 0.3);
+    bloomPass.strength = settings.glowStrength + rhythmBass * 0.12 * (settings.glowStrength / 0.3) + beat.beatPulse * 0.08;
 
     const targetShift = smoothTreble * 0.002 + (beat.trebleDelta > 0.03 ? beat.trebleDelta * 0.15 : 0);
     rgbShiftPass.uniforms.amount.value = THREE.MathUtils.lerp(

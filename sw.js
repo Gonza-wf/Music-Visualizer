@@ -1,4 +1,4 @@
-const CACHE_NAME = 'techno-vis-v6';
+const CACHE_NAME = 'techno-vis-v7';
 const ASSETS = [
   './',
   './index.html',

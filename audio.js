@@ -19,9 +19,13 @@ export class BeatDetector {
     this.estimatedBPM = 128;
     this.currentBeat = 0;
     this.beatPhase = 0;
+    this.beatPulse = 0;
+    this.rhythmWave = 0;
     this.anticipatedBeat = 0;
     this.prevTreble = 0;
     this.extraRotation = 0;
+    this.beatRotation = 0;
+    this.lastBeatBass = 0;
   }
 
   reset() {
@@ -31,26 +35,37 @@ export class BeatDetector {
     this.estimatedBPM = 128;
     this.currentBeat = 0;
     this.beatPhase = 0;
+    this.beatPulse = 0;
+    this.rhythmWave = 0;
     this.anticipatedBeat = 0;
     this.extraRotation = 0;
+    this.beatRotation = 0;
+    this.lastBeatBass = 0;
   }
 
-  update(bass, treble, time, isPlaying) {
+  update(bass, treble, time, isPlaying, deltaTime = 1 / 60) {
     const trebleDelta = treble - this.prevTreble;
     this.prevTreble = treble;
 
     if (!isPlaying) {
       this.currentBeat = 0;
       this.beatPhase = 0;
+      this.beatPulse = 0;
+      this.rhythmWave = 0;
       this.anticipatedBeat = 0;
+      this.beatRotation *= 0.9;
       return {
         isBeat: false,
         currentBeat: 0,
         beatPhase: 0,
+        beatPulse: 0,
+        rhythmWave: 0,
         anticipatedBeat: 0,
         trebleDelta: 0,
         estimatedBPM: this.estimatedBPM,
-        extraRotation: this.extraRotation
+        extraRotation: this.extraRotation,
+        beatRotation: this.beatRotation,
+        kickBass: 0
       };
     }
 
@@ -75,38 +90,59 @@ export class BeatDetector {
 
       this.lastBeatTime = time;
       this.currentBeat = 1.0;
+      this.beatPulse = 1.0;
+      this.lastBeatBass = bass;
       this.extraRotation += bass * 1.5;
+      this.beatRotation += 0.28 + bass * 0.45;
     }
 
     this.historyBass = Math.max(0.4, this.historyBass - 0.015);
 
+    const interval = 60 / this.estimatedBPM;
     if (this.lastBeatTime > 0) {
-      const interval = 60 / this.estimatedBPM;
       this.beatPhase = Math.min(1, (time - this.lastBeatTime) / interval);
+      // Onda triangular: pico en el downbeat, valle entre kicks
+      this.rhythmWave = 1.0 - Math.abs(this.beatPhase * 2.0 - 1.0);
 
-      // Anticipación suave cerca del beat predicho
       if (this.beatPhase > 0.82 && bass > 0.35 && bass > this.historyBass * 0.9) {
         this.anticipatedBeat = Math.max(this.anticipatedBeat, 0.35 * (this.beatPhase - 0.82) / 0.18);
       }
+    } else {
+      this.beatPhase = 0;
+      this.rhythmWave = 0;
     }
 
-    this.currentBeat = Math.max(this.currentBeat, this.anticipatedBeat);
-    this.currentBeat *= 0.85;
+    // Decaimiento del pulso sincronizado al BPM (~35% del intervalo de beat)
+    const pulseDecay = Math.pow(0.001, deltaTime / (interval * 0.35));
+    this.beatPulse *= pulseDecay;
+    if (this.beatPulse < 0.001) this.beatPulse = 0;
+
+    this.currentBeat = Math.max(this.currentBeat, this.beatPulse, this.anticipatedBeat);
+    this.currentBeat *= Math.pow(0.05, deltaTime * this.estimatedBPM / 30);
     this.anticipatedBeat *= 0.7;
 
     if (this.currentBeat < 0.01) this.currentBeat = 0;
     if (this.anticipatedBeat < 0.01) this.anticipatedBeat = 0;
 
     this.extraRotation *= 0.92;
+    this.beatRotation *= 0.9;
+
+    // Hi-hat / offbeat micro-pulso en agudos
+    const offbeatPulse = trebleDelta > 0.04 ? trebleDelta * 2.5 : 0;
 
     return {
       isBeat,
       currentBeat: this.currentBeat,
       beatPhase: this.beatPhase,
+      beatPulse: this.beatPulse,
+      rhythmWave: this.rhythmWave,
       anticipatedBeat: this.anticipatedBeat,
       trebleDelta,
+      offbeatPulse,
       estimatedBPM: this.estimatedBPM,
-      extraRotation: this.extraRotation
+      extraRotation: this.extraRotation,
+      beatRotation: this.beatRotation,
+      kickBass: this.beatPulse * this.lastBeatBass
     };
   }
 }
@@ -315,15 +351,21 @@ export function createAudioEngine(settingsManager) {
 
   function getFrequencyBands() {
     if (!analyser || !isPlaying) {
-      return { bass: 0, mid: 0, treble: 0 };
+      return { bass: 0, mid: 0, treble: 0, rawBass: 0, rawMid: 0, rawTreble: 0 };
     }
 
     analyser.getByteFrequencyData(dataArray);
     const mult = settingsManager.get().bassSensMult;
+    const rawBass = getAvg(dataArray, 0, 3) * mult;
+    const rawMid = getAvg(dataArray, 4, 40) * mult;
+    const rawTreble = getAvg(dataArray, 40, 128) * mult;
     return {
-      bass: getAvg(dataArray, 0, 3) * mult,
-      mid: getAvg(dataArray, 4, 40) * mult,
-      treble: getAvg(dataArray, 40, 128) * mult
+      bass: rawBass,
+      mid: rawMid,
+      treble: rawTreble,
+      rawBass,
+      rawMid,
+      rawTreble
     };
   }
 

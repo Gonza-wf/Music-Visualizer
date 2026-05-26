@@ -38,6 +38,7 @@ export function initUI({ audio, visualizer, settingsManager, onSettingsChange, o
   const settingsSidebar = document.getElementById('settings-sidebar');
   const toggleStrobe = document.getElementById('toggle-strobe');
   const toggleBwMode = document.getElementById('toggle-bw-mode');
+  const bwModeGroup = document.getElementById('bw-mode-group');
   const sliderFlash = document.getElementById('slider-flash');
   const sliderBass = document.getElementById('slider-bass');
   const sliderGlow = document.getElementById('slider-glow');
@@ -70,10 +71,16 @@ export function initUI({ audio, visualizer, settingsManager, onSettingsChange, o
     onPlaylistChange?.(audio.getTracks());
   }, 500);
 
+  function syncStrobeSubOptions() {
+    const strobeOn = toggleStrobe.checked;
+    bwModeGroup.querySelector('.setting-label').classList.toggle('disabled', !strobeOn);
+  }
+
   function syncSettingsToDOM() {
     const s = settingsManager.get();
     toggleStrobe.checked = s.isStrobeEnabled;
     toggleBwMode.checked = s.isBlackAndWhite;
+    syncStrobeSubOptions();
     sliderFlash.value = s.flashDecay;
     sliderBass.value = s.bassSensMult;
     sliderGlow.value = s.glowStrength;
@@ -193,6 +200,7 @@ export function initUI({ audio, visualizer, settingsManager, onSettingsChange, o
   // --- Settings listeners ---
   toggleStrobe.addEventListener('change', () => {
     settingsManager.set('isStrobeEnabled', toggleStrobe.checked);
+    syncStrobeSubOptions();
     persistSettings();
   });
 

@@ -434,6 +434,11 @@ input[type="range"]:hover::-webkit-slider-thumb {
   color: var(--accent);
 }
 
+.setting-label.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 @media (max-width: 768px) {
   /* Hide hover triggers */
   .edge-trigger { display: none !important; }
