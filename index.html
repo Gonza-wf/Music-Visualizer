@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Techno Visualizer</title>
+  <meta name="description" content="Visualizador de Audio 3D Reactivo para Techno">
+  <meta name="theme-color" content="#000000">
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- iOS PWA Support -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="TechnoVis">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <!-- Mobile Top Buttons -->
+  <button id="mobile-playlist-btn" class="mobile-corner-btn left-corner hidden" title="Playlists">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+  </button>
+  <button id="mobile-settings-btn" class="mobile-corner-btn right-corner hidden" title="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+  </button>
+
+  <!-- Left Sidebar (Playlist) -->
+  <div id="sidebar-trigger" class="edge-trigger">
+    <svg class="indicator-arrow left-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+  </div>
+  <div id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <h3>Playlist</h3>
+      <div class="sidebar-actions">
+        <button id="btn-shuffle" class="sidebar-action-btn" title="Mezclar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+        </button>
+        <button id="btn-clear-playlist" class="sidebar-action-btn" title="Limpiar playlist">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        </button>
+      </div>
+    </div>
+    <span id="track-count" class="track-count">0 tracks</span>
+    <ul id="playlist">
+      <li class="empty-state">Playlist empty</li>
+    </ul>
+    <button class="mobile-close-btn" id="close-playlist-btn">&times;</button>
+  </div>
+
+  <!-- Right Sidebar (Settings) -->
+  <div id="settings-trigger" class="edge-trigger right-trigger">
+    <svg class="indicator-arrow right-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+  </div>
+  <div id="settings-sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <h3>Configuración</h3>
+    </div>
+    <div class="settings-content">
+      <button id="btn-fullscreen" class="settings-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+        Pantalla Completa
+      </button>
+      <div class="settings-group">
+        <label class="setting-label">
+          <span>Strobe B/N (Fondo)</span>
+          <input type="checkbox" id="toggle-bw-mode">
+        </label>
+      </div>
+
+      <div class="settings-group">
+        <div class="setting-label-row">
+          <span>Decaimiento Flash (Velocidad)</span>
+          <span id="val-flash">0.88</span>
+        </div>
+        <input type="range" id="slider-flash" class="setting-slider" min="0.75" max="0.99" step="0.01" value="0.88">
+      </div>
+
+      <div class="settings-group">
+        <div class="setting-label-row">
+          <span>Sensibilidad de Bajos</span>
+          <span id="val-bass">1.0</span>
+        </div>
+        <input type="range" id="slider-bass" class="setting-slider" min="0.1" max="2.5" step="0.1" value="1.0">
+      </div>
+
+      <div class="settings-group">
+        <div class="setting-label-row">
+          <span>Brillo Global (Glow)</span>
+          <span id="val-glow">0.3</span>
+        </div>
+        <input type="range" id="slider-glow" class="setting-slider" min="0" max="1" step="0.05" value="0.3">
+      </div>
+
+      <div class="settings-group">
+        <div class="setting-label-row">
+          <span>Velocidad de Cámara</span>
+          <span id="val-cam">1.0</span>
+        </div>
+        <input type="range" id="slider-cam" class="setting-slider" min="0" max="3" step="0.1" value="1.0">
+      </div>
+
+      <div class="settings-group">
+        <div class="setting-label-row">
+          <span>Calidad Gráfica</span>
+        </div>
+        <div class="preset-buttons">
+          <button class="preset-btn" id="preset-low">Bajo</button>
+          <button class="preset-btn active" id="preset-mid">Medio</button>
+          <button class="preset-btn" id="preset-high">Alto</button>
+          <button class="preset-btn" id="preset-ultra">Ultra</button>
+        </div>
+      </div>
+
+      <div class="settings-group" style="margin-top: 10px;">
+        <button id="btn-reset-settings" class="settings-btn" style="justify-content: center; color: var(--accent);">
+          Restablecer Valores
+        </button>
+      </div>
+    </div>
+    <button class="mobile-close-btn" id="close-settings-btn">&times;</button>
+  </div>
+
+  <div id="ui-container" class="glass-panel">
+    <div class="main-bar">
+      <div class="controls">
+        <button id="btn-prev" title="Previous Track">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+        </button>
+        <button id="btn-play" class="play-btn" title="Play/Pause">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        </button>
+        <button id="btn-next" title="Next Track">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+        </button>
+      </div>
+
+      <div class="track-info">
+        <span id="track-name">No track</span>
+      </div>
+
+      <div class="file-input-wrapper">
+        <label for="audio-upload" class="custom-file-upload">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          Add
+        </label>
+        <input type="file" id="audio-upload" accept="audio/*,.opus,.ogg,.flac,.wav,.mp3,.m4a" multiple />
+      </div>
+    </div>
+
+    <!-- Progress Bar Row -->
+    <div class="progress-row">
+      <span id="current-time">0:00</span>
+      <input type="range" id="progress-bar" min="0" max="100" value="0" step="0.1">
+      <span id="total-time">0:00</span>
+    </div>
+  </div>
+
+  <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="main.js"></script>
+
+  <!-- Register Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('SW registered:', reg.scope))
+          .catch(err => console.log('SW registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
