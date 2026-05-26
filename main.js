@@ -556,53 +556,50 @@ varying vec3 vPosition;
 
 ${noiseChunk}
 
-// Function to rotate around Y axis
-mat3 rotateY(float angle) {
-  float s = sin(angle);
-  float c = cos(angle);
-  return mat3(
-    c, 0.0, s,
-    0.0, 1.0, 0.0,
-    -s, 0.0, c
-  );
-}
-
 void main() {
   vNormal = normal;
   
-  // Stretch vertically based on mids, squash horizontally based on bass
-  vec3 deformedPosition = position;
-  float stretch = 1.0 + uMid * 0.5;
-  float squash = 1.0 - (uBass * 0.2);
-  deformedPosition.y *= stretch;
-  deformedPosition.x *= squash;
-  deformedPosition.z *= squash;
-
-  // Twisting torsion based on treble and height (y)
-  float twistAngle = deformedPosition.y * (uTreble * 0.3 + uEnergy * 0.1) * sin(uTime * 0.5);
-  deformedPosition = rotateY(twistAngle) * deformedPosition;
+  // 1. Base Low-Frequency Breathing (Fluidity)
+  // uMid adds a gentle expansion/contraction
+  float baseNoise = snoise(position * 0.4 + uTime * 0.15);
+  float breath = baseNoise * (0.2 + uMid * 0.5);
   
-  // Base organic blob shape (low frequency)
-  float baseMorph = snoise(deformedPosition * 0.3 + uTime * 0.2) * (uEnergy * 2.0);
+  // 2. Directional Stretching & Squishing (Beat Impact)
+  // On heavy bass, stretch it vertically (y) and compress horizontally (x, z)
+  float stretchIntensity = smoothstep(0.3, 0.9, uBass) * (0.8 + uBeat * 1.5);
+  vec3 stretchPos = position;
+  stretchPos.y *= 1.0 + stretchIntensity * 1.2;
+  stretchPos.x *= 1.0 - stretchIntensity * 0.2;
+  stretchPos.z *= 1.0 - stretchIntensity * 0.2;
   
-  // Aggressive spikes only when a beat hits
-  float spikeIntensity = smoothstep(0.3, 0.9, uBass) * (0.5 + uBeat * 2.0); 
-  vec3 spikePos = deformedPosition * (1.5 + uEnergy) - uTime * 0.5;
-  float aggroNoise = snoise(spikePos);
-  float spikes = pow(abs(aggroNoise), 2.5) * spikeIntensity * 3.5;
+  // 3. Mid-Frequency Warping (Torsion/Twist)
+  // Adds a flowing, vortex-like feel based on energy
+  float warpNoise = snoise(stretchPos * 0.8 - uTime * 0.4);
+  float warp = warpNoise * (uEnergy * 0.6 + 0.1) * (1.0 + uBeat * 0.5);
   
-  // High-frequency ripples specifically for treble (hi-hats, snares)
-  float trebleRipples = snoise(deformedPosition * 5.0 - uTime * 3.0) * uTreble * 0.5;
+  // 4. High-Frequency Ripples (Treble Detail)
+  // Only appears sharply when hi-hats or snares hit
+  float trebleRipples = snoise(position * 2.5 + uTime * 1.5) * uTreble * 0.3;
   
-  // Breathing with mid frequencies
-  float breath = snoise(deformedPosition * 0.8 + uTime * 0.1) * (uMid + 0.5);
+  // Combine all deformations
+  float totalDisp = breath + warp + trebleRipples;
   
-  float totalDisp = baseMorph + spikes + breath + trebleRipples;
+  // 5. Global Scale (Volume/Bass Impact)
+  // The entire object pumps to the beat, getting physically larger
+  float globalScale = 1.0 + stretchIntensity * 0.2 + (uEnergy * 0.1);
+  
   vDisplacement = totalDisp;
-  vPosition = deformedPosition;
+  vPosition = position;
   
-  vec3 finalPos = deformedPosition + normal * totalDisp;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(finalPos, 1.0);
+  // Apply global scale to base position, then add normal displacement
+  vec3 newPosition = position * globalScale + normal * totalDisp;
+  
+  // Apply extra non-uniform scaling on the final vertex for the stretch effect
+  newPosition.y *= 1.0 + stretchIntensity * 0.3;
+  newPosition.x *= 1.0 - stretchIntensity * 0.1;
+  newPosition.z *= 1.0 - stretchIntensity * 0.1;
+  
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
 }
 `;
 
@@ -626,35 +623,25 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 void main() {
-  // Hue cycles over time, jumps on beats, and reacts to spatial position (iridescence)
-  float spatialHue = vPosition.y * 0.05 + vPosition.x * 0.02;
-  float hue = fract(uTime * 0.05 + vDisplacement * 0.1 + uBeat * 0.15 + spatialHue);
+  // Hue cycles over time and jumps on beats
+  float hue = fract(uTime * 0.04 + vDisplacement * 0.08 + uBeat * 0.15);
   
-  // Saturation dips slightly at high energy to look more "hot" or "electric"
-  float saturation = clamp(0.9 - (uEnergy * 0.2), 0.5, 1.0);
+  // High saturation always for vivid colors
+  float saturation = 0.85;
   
-  // Base brightness
-  float value = 0.15 + uBass * 0.4 + max(0.0, vDisplacement) * 0.12;
-  value = clamp(value, 0.05, 0.7);
+  // Brightness: dark base, brightens with energy but NEVER goes white
+  // Max value ~0.7 so bloom doesn't blow it out
+  float value = 0.15 + uBass * 0.35 + vDisplacement * 0.08;
+  value = clamp(value, 0.05, 0.65);
   
-  vec3 baseColor = hsv2rgb(vec3(hue, saturation, value));
+  vec3 color = hsv2rgb(vec3(hue, saturation, value));
   
-  // Fresnel / Rim Lighting (makes it look like liquid/jelly)
-  // Calculate view direction assuming camera is at z+
-  vec3 viewDir = normalize(vec3(0.0, 0.0, 1.0));
-  float rimDot = 1.0 - max(dot(viewDir, normalize(vNormal)), 0.0);
-  float rimIntensity = smoothstep(0.5, 1.0, rimDot) * (uMid * 0.8 + 0.2);
+  // Subtle rim lighting
+  float rim = 1.0 - max(dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0);
+  rim = smoothstep(0.65, 1.0, rim);
+  color += color * rim * 0.4;
   
-  // Rim color is a shifted hue (complementary/analogous)
-  vec3 rimColor = hsv2rgb(vec3(fract(hue + 0.15), 0.6, 1.0));
-  
-  // Highlight peaks with pure electric color
-  float peakIntensity = smoothstep(1.5, 4.0, vDisplacement);
-  vec3 peakColor = hsv2rgb(vec3(fract(hue - 0.1), 0.3, 1.0)) * peakIntensity * uBass;
-  
-  vec3 finalColor = baseColor + (rimColor * rimIntensity) + peakColor;
-  
-  gl_FragColor = vec4(finalColor, uOpacity);
+  gl_FragColor = vec4(color, uOpacity);
 }
 `;
 
@@ -841,24 +828,17 @@ function animate() {
   // The wireframe ghost becomes more visible when treble is high (snares/claps)
   wireMaterial.uniforms.uOpacity.value = 0.05 + (smoothTreble * 0.35);
 
-  // --- Dynamic Mesh Scaling (Squish and Stretch Elasticity) ---
-  // Instead of uniform scaling, we deform X, Y, Z independently
+  // --- Dynamic Mesh Scaling (Grows/Shrinks with Rhythm) ---
+  // Base scale + bass boost + instant punch from currentBeat
+  const targetScale = 1.0 + (smoothBass * 0.4) + (currentBeat * 0.4);
+  const currentScale = visualizerMesh.scale.x;
+  // Fast attack, smooth decay
+  const newScale = THREE.MathUtils.lerp(currentScale, targetScale, currentBeat > 0.5 ? 0.5 : 0.15);
+  visualizerMesh.scale.setScalar(newScale);
   
-  // Y-axis: Stretches up on Mids/Vocals, bounces on Beat
-  const targetScaleY = 1.0 + (smoothMid * 0.4) + (currentBeat * 0.6);
-  // X & Z axes: Expands wide on Bass, squishes in when stretching up
-  const targetScaleXZ = 1.0 + (smoothBass * 0.5) - (smoothMid * 0.15) + (currentBeat * 0.3);
-
-  // Smooth lerp (elastic feel: fast attack, medium decay)
-  const attack = currentBeat > 0.5 ? 0.6 : 0.15;
-  visualizerMesh.scale.y = THREE.MathUtils.lerp(visualizerMesh.scale.y, targetScaleY, attack);
-  visualizerMesh.scale.x = THREE.MathUtils.lerp(visualizerMesh.scale.x, targetScaleXZ, attack);
-  visualizerMesh.scale.z = THREE.MathUtils.lerp(visualizerMesh.scale.z, targetScaleXZ, attack);
-  
-  // Wireframe mimics but slightly larger and reacts violently to treble
-  const wireScaleY = visualizerMesh.scale.y * (1.02 + smoothTreble * 0.15);
-  const wireScaleXZ = visualizerMesh.scale.x * (1.02 + smoothTreble * 0.15);
-  wireMesh.scale.set(wireScaleXZ, wireScaleY, wireScaleXZ);
+  // Wireframe scales slightly larger and reacts more to treble
+  const wireScale = newScale * (1.02 + smoothTreble * 0.15);
+  wireMesh.scale.setScalar(wireScale);
 
   // --- Object Rotation (Mechanical Spin) ---
   // Slowly rotates naturally, but jerks forward violently on heavy beats
