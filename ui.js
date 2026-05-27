@@ -1,4 +1,6 @@
 import { getDefaultPreset } from './settings.js';
+import { queryElements, EventDelegator, debounce } from './dom-helpers.js';
+import { logger } from './logger.js';
 
 export const PLAY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
 export const PAUSE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
@@ -10,53 +12,67 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function debounce(fn, ms) {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), ms);
-  };
-}
-
 export function initUI({ audio, visualizer, settingsManager, onSettingsChange, onPlaylistChange }) {
-  const uiContainer = document.getElementById('ui-container');
-  const btnPlay = document.getElementById('btn-play');
-  const btnNext = document.getElementById('btn-next');
-  const btnPrev = document.getElementById('btn-prev');
-  const trackNameEl = document.getElementById('track-name');
-  const uploadInput = document.getElementById('audio-upload');
-  const playlistEl = document.getElementById('playlist');
-  const progressBar = document.getElementById('progress-bar');
-  const currentTimeEl = document.getElementById('current-time');
-  const totalTimeEl = document.getElementById('total-time');
-  const btnFullscreen = document.getElementById('btn-fullscreen');
-  const mobilePlaylistBtn = document.getElementById('mobile-playlist-btn');
-  const mobileSettingsBtn = document.getElementById('mobile-settings-btn');
-  const closePlaylistBtn = document.getElementById('close-playlist-btn');
-  const closeSettingsBtn = document.getElementById('close-settings-btn');
-  const sidebar = document.getElementById('sidebar');
-  const settingsSidebar = document.getElementById('settings-sidebar');
-  const toggleStrobe = document.getElementById('toggle-strobe');
-  const toggleBwMode = document.getElementById('toggle-bw-mode');
-  const bwModeGroup = document.getElementById('bw-mode-group');
-  const sliderFlash = document.getElementById('slider-flash');
-  const sliderBass = document.getElementById('slider-bass');
-  const sliderGlow = document.getElementById('slider-glow');
-  const sliderCam = document.getElementById('slider-cam');
-  const valFlash = document.getElementById('val-flash');
-  const valBass = document.getElementById('val-bass');
-  const valGlow = document.getElementById('val-glow');
-  const valCam = document.getElementById('val-cam');
-  const trackCountEl = document.getElementById('track-count');
-  const btnShuffle = document.getElementById('btn-shuffle');
-  const btnClearPlaylist = document.getElementById('btn-clear-playlist');
-  const btnResetSettings = document.getElementById('btn-reset-settings');
+  const eventDelegator = new EventDelegator();
+  
+  // Query todos los elementos del DOM de una sola vez
+  const el = queryElements({
+    uiContainer: '#ui-container',
+    btnPlay: '#btn-play',
+    btnNext: '#btn-next',
+    btnPrev: '#btn-prev',
+    trackName: '#track-name',
+    uploadInput: '#audio-upload',
+    playlist: '#playlist',
+    progressBar: '#progress-bar',
+    currentTime: '#current-time',
+    totalTime: '#total-time',
+    btnFullscreen: '#btn-fullscreen',
+    mobilePlaylistBtn: '#mobile-playlist-btn',
+    mobileSettingsBtn: '#mobile-settings-btn',
+    closePlaylistBtn: '#close-playlist-btn',
+    closeSettingsBtn: '#close-settings-btn',
+    sidebar: '#sidebar',
+    settingsSidebar: '#settings-sidebar',
+    toggleStrobe: '#toggle-strobe',
+    toggleBwMode: '#toggle-bw-mode',
+    bwModeGroup: '#bw-mode-group',
+    sliderFlash: '#slider-flash',
+    sliderBass: '#slider-bass',
+    sliderGlow: '#slider-glow',
+    sliderCam: '#slider-cam',
+    valFlash: '#val-flash',
+    valBass: '#val-bass',
+    valGlow: '#val-glow',
+    valCam: '#val-cam',
+    trackCount: '#track-count',
+    btnShuffle: '#btn-shuffle',
+    btnClearPlaylist: '#btn-clear-playlist',
+    btnResetSettings: '#btn-reset-settings',
+    presetLow: '#preset-low',
+    presetMid: '#preset-mid',
+    presetHigh: '#preset-high',
+    presetUltra: '#preset-ultra',
+    sidebarTrigger: '#sidebar-trigger',
+    settingsTrigger: '#settings-trigger'
+  });
+
+  // Usar aliases más cortos
+  const {
+    uiContainer, btnPlay, btnNext, btnPrev, trackName: trackNameEl, uploadInput,
+    playlist: playlistEl, progressBar, currentTime: currentTimeEl, totalTime: totalTimeEl,
+    btnFullscreen, mobilePlaylistBtn, mobileSettingsBtn, closePlaylistBtn, closeSettingsBtn,
+    sidebar, settingsSidebar, toggleStrobe, toggleBwMode, bwModeGroup,
+    sliderFlash, sliderBass, sliderGlow, sliderCam,
+    valFlash, valBass, valGlow, valCam, trackCount: trackCountEl,
+    btnShuffle, btnClearPlaylist, btnResetSettings
+  } = el;
 
   const presetBtns = {
-    low: document.getElementById('preset-low'),
-    mid: document.getElementById('preset-mid'),
-    high: document.getElementById('preset-high'),
-    ultra: document.getElementById('preset-ultra')
+    low: el.presetLow,
+    mid: el.presetMid,
+    high: el.presetHigh,
+    ultra: el.presetUltra
   };
 
   let isSeeking = false;
@@ -72,25 +88,29 @@ export function initUI({ audio, visualizer, settingsManager, onSettingsChange, o
   }, 500);
 
   function syncStrobeSubOptions() {
-    const strobeOn = toggleStrobe.checked;
-    bwModeGroup.querySelector('.setting-label').classList.toggle('disabled', !strobeOn);
+    const strobeOn = toggleStrobe?.checked;
+    if (strobeOn) {
+      bwModeGroup?.querySelector?.('.setting-label')?.classList?.remove?.('disabled');
+    } else {
+      bwModeGroup?.querySelector?.('.setting-label')?.classList?.add?.('disabled');
+    }
   }
 
   function syncSettingsToDOM() {
     const s = settingsManager.get();
-    toggleStrobe.checked = s.isStrobeEnabled;
-    toggleBwMode.checked = s.isBlackAndWhite;
+    if (toggleStrobe) toggleStrobe.checked = s.isStrobeEnabled;
+    if (toggleBwMode) toggleBwMode.checked = s.isBlackAndWhite;
     syncStrobeSubOptions();
-    sliderFlash.value = s.flashDecay;
-    sliderBass.value = s.bassSensMult;
-    sliderGlow.value = s.glowStrength;
-    sliderCam.value = s.cameraSpeedMult;
-    valFlash.textContent = s.flashDecay.toFixed(2);
-    valBass.textContent = s.bassSensMult.toFixed(1);
-    valGlow.textContent = s.glowStrength.toFixed(2);
-    valCam.textContent = s.cameraSpeedMult.toFixed(1);
+    if (sliderFlash) sliderFlash.value = s.flashDecay;
+    if (sliderBass) sliderBass.value = s.bassSensMult;
+    if (sliderGlow) sliderGlow.value = s.glowStrength;
+    if (sliderCam) sliderCam.value = s.cameraSpeedMult;
+    if (valFlash) valFlash.textContent = s.flashDecay.toFixed(2);
+    if (valBass) valBass.textContent = s.bassSensMult.toFixed(1);
+    if (valGlow) valGlow.textContent = s.glowStrength.toFixed(2);
+    if (valCam) valCam.textContent = s.cameraSpeedMult.toFixed(1);
     Object.entries(presetBtns).forEach(([key, btn]) => {
-      btn.classList.toggle('active', key === s.preset);
+      btn?.classList?.toggle?.('active', key === s.preset);
     });
   }
 

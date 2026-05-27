@@ -1,3 +1,6 @@
+import { validateAudioFile, validateAudioFiles } from './audio-validation.js';
+import { logger } from './logger.js';
+
 function getAvg(arr, start, end) {
   let sum = 0;
   for (let i = start; i < end; i++) sum += arr[i];
@@ -317,20 +320,32 @@ export function createAudioEngine(settingsManager) {
   }
 
   function setTracksFromFiles(files, startIndex = -1) {
-    revokeAllUrls();
-    tracks.length = 0;
+    const { validFiles, errors } = validateAudioFiles(files);
+    
+    if (errors.length > 0) {
+      logger.warn('audio', `${errors.length} archivos fueron rechazados`, { errors });
+    }
 
-    files.forEach((file) => tracks.push({ file }));
-
-    if (tracks.length === 0) {
+    if (validFiles.length === 0) {
+      logger.error('audio', new Error('No valid audio files provided'), { totalFiles: files.length });
       currentTrackIndex = -1;
       settingsManager.set('currentTrackIndex', -1);
       listeners.playlistchange?.([]);
       return;
     }
 
+    revokeAllUrls();
+    tracks.length = 0;
+
+    validFiles.forEach((file) => {
+      tracks.push({ file });
+      logger.info('audio', 'Track agregado', { name: file.name, size: (file.size / 1024 / 1024).toFixed(2) });
+    });
+
     const idx = startIndex >= 0 && startIndex < tracks.length ? startIndex : 0;
     listeners.playlistchange?.(tracks.map((t) => t.file));
+    logger.info('audio', 'Playlist cargada', { trackCount: tracks.length, startIndex: idx });
+    
     initAudio();
     loadTrack(idx, false);
   }
@@ -424,18 +439,20 @@ export function createAudioEngine(settingsManager) {
   }
 
   audioElement.addEventListener('error', (e) => {
-    console.error('Audio playback error:', e);
+    logger.error('audio', new Error('Playback error'), { error: e.target.error?.message });
     isPlaying = false;
     listeners.error?.(e);
   });
 
   audioElement.addEventListener('ended', () => {
+    logger.info('audio', 'Track finalizado');
     if (tracks.length > 0) {
       loadTrack((currentTrackIndex + 1) % tracks.length);
     }
   });
 
   audioElement.addEventListener('loadedmetadata', () => {
+    logger.info('audio', 'Metadata cargada', { duration: audioElement.duration });
     listeners.loadedmetadata?.(audioElement.duration);
   });
 
@@ -463,6 +480,28 @@ export function createAudioEngine(settingsManager) {
     setIsPlaying: (val) => { isPlaying = val; },
     seek: (time) => { audioElement.currentTime = time; },
     next: () => tracks.length && loadTrack((currentTrackIndex + 1) % tracks.length),
-    prev: () => tracks.length && loadTrack((currentTrackIndex - 1 + tracks.length) % tracks.length)
+    prev: () => tracks.length && loadTrack((currentTrackIndex - 1 + tracks.length) % tracks.length),
+    
+    /**
+     * Limpiar recursos de audio
+     */
+    destroy() {
+      try {
+        audioElement.pause();
+        audioElement.src = '';
+        revokeAllUrls();
+        tracks.length = 0;
+        
+        if (audioCtx && audioCtx.state !== 'closed') {
+          analyser?.disconnect?.();
+          source?.disconnect?.();
+          audioCtx.close();
+        }
+        
+        logger.info('audio', 'AudioEngine destruido correctamente');
+      } catch (err) {
+        logger.error('audio', err, { action: 'destroy' });
+      }
+    }
   };
 }

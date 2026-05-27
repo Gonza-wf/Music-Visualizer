@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
 import { PRESETS } from './settings.js';
+import { logger } from './logger.js';
 
 const NOISE_CHUNK = `
 vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
@@ -321,11 +322,11 @@ export function createVisualizer(container, settingsManager) {
 
     const idlePulse = 0.2 + Math.sin(time * 0.9) * 0.08;
 
-    // Envelopes: ataque rápido, release lento — cada capa vive
+    // Envelopes: MEJORADOS — ataque muy rápido, release medio (más tight)
     if (isPlaying) {
-      envBass = envelope(envBass, bands.rawBass, 0.42, 0.14);
-      envMid = envelope(envMid, bands.rawMid, 0.35, 0.12);
-      envTreble = envelope(envTreble, bands.rawTreble, 0.38, 0.16);
+      envBass = envelope(envBass, bands.rawBass, 0.52, 0.18);      // Ataque + rápido, release más rápido
+      envMid = envelope(envMid, bands.rawMid, 0.45, 0.14);          // Más responsive
+      envTreble = envelope(envTreble, bands.rawTreble, 0.48, 0.20); // Agudos más rápidos
     } else {
       envBass = envelope(envBass, idlePulse * 0.28, 0.1, 0.08);
       envMid = envelope(envMid, idlePulse * 0.5, 0.1, 0.08);
@@ -341,18 +342,19 @@ export function createVisualizer(container, settingsManager) {
     const snare = beat.snarePulse ?? 0;
     const midHit = beat.midPulse ?? 0;
 
-    // Capas mezcladas: bajos dominan, medios/agudos añaden vida
+    // Capas mezcladas MEJORADO: prioritize beats, drops y bass
     const displayBass = isPlaying
-      ? Math.max(envBass, beat.beatPulse * bands.rawBass, drop * bands.rawBass * 0.8)
+      ? Math.max(envBass, beat.beatPulse * bands.rawBass * 1.1, drop * bands.rawBass * 1.0)
       : envBass;
-    const displayMid = envMid + beat.rhythmWave * 0.14 + midHit * 0.35 + snare * 0.12;
-    const displayTreble = envTreble + snare * 0.28 + (beat.trebleDelta > 0.03 ? beat.trebleDelta * 0.4 : 0);
-    const energy = displayBass * 0.5 + displayMid * 0.32 + displayTreble * 0.18;
+    
+    const displayMid = envMid + beat.rhythmWave * 0.18 + midHit * 0.4 + snare * 0.15;
+    const displayTreble = envTreble + snare * 0.32 + (beat.trebleDelta > 0.03 ? beat.trebleDelta * 0.5 : 0);
+    const energy = displayBass * 0.55 + displayMid * 0.30 + displayTreble * 0.15;
 
     const hitFlash = beat.isBeat || beat.isDrop;
     if (hitFlash && settings.isStrobeEnabled) {
       const flashIntensity = THREE.MathUtils.clamp(
-        (beat.isDrop ? 0.95 : bands.rawBass * 2.0), 0.5, 0.98
+        (beat.isDrop ? 1.0 : bands.rawBass * 2.2), 0.6, 1.0
       );
       bgFlashOpacity = Math.max(bgFlashOpacity, flashIntensity);
       lastStrobeColor = Math.floor(Math.random() * STROBE_COLORS.length);
@@ -360,32 +362,36 @@ export function createVisualizer(container, settingsManager) {
 
     updateUniforms(material, time, displayBass, displayMid, displayTreble, energy, beat);
     updateUniforms(wireMaterial, time, displayBass, displayMid, displayTreble, energy, beat);
-    wireMaterial.uniforms.uOpacity.value = 0.05 + displayTreble * 0.45 + snare * 0.25 + drop * 0.15;
+    wireMaterial.uniforms.uOpacity.value = 0.08 + displayTreble * 0.5 + snare * 0.28 + drop * 0.18;
 
-    // Escala: drops > kicks > volumen continuo
+    // Escala MEJORADA: más agresiva en drops y kicks
     let targetScale =
       1.0 +
-      displayBass * 0.42 +
-      displayMid * 0.14 +
-      displayTreble * 0.06 +
-      beat.beatPulse * 0.48 +
-      drop * 0.72 +
-      impact * 0.35;
+      displayBass * 0.5 +          // Bajos más dominantes
+      displayMid * 0.16 +
+      displayTreble * 0.07 +
+      beat.beatPulse * 0.52 +      // Kicks más visibles
+      drop * 0.85 +                 // Drops mucho más visibles
+      impact * 0.42;
     if (!Number.isFinite(targetScale)) targetScale = 1.0;
 
-    const scaleLerp = drop > 0.3 || beat.beatPulse > 0.5 ? 0.58 : 0.18;
+    // Lerp MEJORADO: más rápido en beats/drops para seguir el ritmo
+    const scaleLerp = drop > 0.4 ? 0.68 : (beat.beatPulse > 0.6 ? 0.58 : 0.22);
     visualizerMesh.scale.setScalar(
       THREE.MathUtils.lerp(visualizerMesh.scale.x, targetScale, scaleLerp)
     );
     wireMesh.scale.setScalar(visualizerMesh.scale.x * (1.025 + displayTreble * 0.14 + snare * 0.06));
 
-    // Orientación: tilt impulsivo en golpes, casi sin giro continuo
+    // Orientación MEJORADA: responde más rápido y precisamente a beats
     const cam = settings.cameraSpeedMult;
     if (isPlaying) {
-      const phaseWobble = Math.sin(beat.beatPhase * Math.PI * 2) * displayMid * 0.035;
-      visualizerMesh.rotation.x = beat.tiltX + phaseWobble + time * 0.012 * cam;
-      visualizerMesh.rotation.y = beat.tiltY + time * 0.015 * cam;
-      visualizerMesh.rotation.z = snare * 0.06 + midHit * 0.04;
+      // Tilt impulsivo (beat tilt es el más importante)
+      const beatTilt = beat.beatPulse > 0.3 ? beat.beatPulse * 0.45 : beat.tiltX * 0.9;
+      const phaseWobble = Math.sin(beat.beatPhase * Math.PI * 2) * displayMid * 0.042;
+      
+      visualizerMesh.rotation.x = beatTilt + phaseWobble + time * 0.012 * cam;
+      visualizerMesh.rotation.y = beat.tiltY * 0.9 + time * 0.015 * cam + drop * 0.12;
+      visualizerMesh.rotation.z = snare * 0.08 + midHit * 0.05 + drop * 0.06;
     } else {
       visualizerMesh.rotation.x = Math.sin(time * 0.35) * 0.06;
       visualizerMesh.rotation.y = Math.sin(time * 0.28) * 0.05;
@@ -395,9 +401,9 @@ export function createVisualizer(container, settingsManager) {
     wireMesh.rotation.y = visualizerMesh.rotation.y * 1.04;
     wireMesh.rotation.z = visualizerMesh.rotation.z * 1.02;
 
-    particles.rotation.y = time * 0.008 * cam + beat.tiltY * 0.3;
-    particles.rotation.x = Math.sin(time * 0.04) * displayBass * 0.08;
-    const pScale = 1.0 + displayBass * 1.3 + drop * 0.45 + energy * 0.25;
+    particles.rotation.y = time * 0.008 * cam + beat.tiltY * 0.35;
+    particles.rotation.x = Math.sin(time * 0.04) * displayBass * 0.1 + drop * 0.08;
+    const pScale = 1.0 + displayBass * 1.5 + drop * 0.55 + energy * 0.28;
     particles.scale.set(pScale, pScale, pScale);
 
     if (settings.isStrobeEnabled) {
@@ -418,17 +424,18 @@ export function createVisualizer(container, settingsManager) {
     }
     scene.background = bgColor;
 
-    const targetFov = 70 + displayBass * 9 + beat.beatPulse * 28 + drop * 45 + impact * 18;
-    camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, drop > 0.2 ? 0.28 : 0.14);
+    const targetFov = 70 + displayBass * 11 + beat.beatPulse * 32 + drop * 52 + impact * 22;
+    camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, drop > 0.25 ? 0.32 : (beat.beatPulse > 0.4 ? 0.24 : 0.16));
     camera.updateProjectionMatrix();
 
-    if (displayBass > 0.5 && (beat.beatPulse > 0.15 || drop > 0.15)) {
-      const shake = (displayBass - 0.5) * (impact + drop * 0.5) * 1.8;
-      camera.position.x = (Math.random() - 0.5) * shake;
-      camera.position.y = (Math.random() - 0.5) * shake;
+    // Camera shake MEJORADO: más fuerte en drops y beats
+    if (displayBass > 0.45 && (beat.beatPulse > 0.25 || drop > 0.2)) {
+      const shake = (displayBass - 0.45) * (impact + drop * 0.6) * 2.2;
+      camera.position.x = (Math.random() - 0.5) * shake * 1.15;
+      camera.position.y = (Math.random() - 0.5) * shake * 1.15;
     } else {
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0, 0.1);
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0, 0.1);
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0, 0.12);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0, 0.12);
     }
 
     bloomPass.strength = settings.glowStrength + displayBass * 0.14 + drop * 0.12 + energy * 0.05;
@@ -460,5 +467,47 @@ export function createVisualizer(container, settingsManager) {
 
   renderer.debug.checkShaderErrors = true;
 
-  return { applyPreset, start, onResize };
+  return { 
+    applyPreset, 
+    start, 
+    onResize,
+    
+    /**
+     * Destruir el visualizador y limpiar recursos Three.js
+     */
+    destroy() {
+      try {
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+          animationId = null;
+        }
+        
+        // Remover event listeners
+        window.removeEventListener('resize', onResize);
+        
+        // Dispose Three.js objects
+        geometry?.dispose?.();
+        material?.dispose?.();
+        wireMaterial?.dispose?.();
+        wireMeshGeo?.dispose?.();
+        bgPlaneMat?.dispose?.();
+        
+        // Dispose composer y passes
+        composer?.passes?.forEach(pass => pass.dispose?.());
+        composer?.dispose?.();
+        
+        // Renderer
+        renderer?.dispose?.();
+        container?.removeChild?.(renderer.domElement);
+        
+        // Particle buffers
+        particleGeo?.dispose?.();
+        particleMat?.dispose?.();
+        
+        logger.info('visualizer', 'Visualizer destruido correctamente');
+      } catch (err) {
+        logger.error('visualizer', err, { action: 'destroy' });
+      }
+    }
+  };
 }
