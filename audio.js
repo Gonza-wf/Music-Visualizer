@@ -62,6 +62,7 @@ export class BeatDetector {
         rhythmWave: 0,
         anticipatedBeat: 0,
         trebleDelta: 0,
+        offbeatPulse: 0,
         estimatedBPM: this.estimatedBPM,
         extraRotation: this.extraRotation,
         beatRotation: this.beatRotation,

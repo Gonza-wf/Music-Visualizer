@@ -83,10 +83,9 @@ void main() {
   float stretchIntensity = smoothstep(0.35, 0.9, uBass) * (0.32 + uBeat * 0.55);
   stretchIntensity += kickAccent * 0.55;
 
-  // Torsión y anillos (patrones por medios)
+  // Patrones en superficie (sin atan(y,x) — incompatible WebGL1)
   float twist = snoise(vec3(position.x * 0.7, position.y * 0.7 + uTime * 0.2, position.z)) * uMid * 0.22;
-  float angle = atan(position.y, position.x);
-  float rings = sin(angle * 5.0 + uTime * 0.6 + uMid * 4.0) * uMid * 0.1;
+  float rings = sin((position.x * 2.8 + position.y * 3.2) + uTime * 0.6 + uMid * 4.0) * uMid * 0.12;
 
   vec3 stretchPos = position;
   stretchPos.y *= 1.0 + stretchIntensity * 0.85;
@@ -301,28 +300,33 @@ export function createVisualizer(container, settingsManager) {
   function animate(audioEngine) {
     animationId = requestAnimationFrame(() => animate(audioEngine));
 
+    const delta = clock.getDelta();
     const time = clock.getElapsedTime();
     const settings = settingsManager.get();
     const bands = audioEngine.getFrequencyBands();
     const isPlaying = audioEngine.getIsPlaying();
 
-    // Suavizado por banda: fluido pero reactivo al volumen
-    const bassLerp = isPlaying ? 0.28 : 0.15;
-    smoothBass = THREE.MathUtils.lerp(smoothBass, bands.rawBass, bassLerp);
-    smoothMid = THREE.MathUtils.lerp(smoothMid, bands.rawMid, 0.16);
-    smoothTreble = THREE.MathUtils.lerp(smoothTreble, bands.rawTreble, 0.18);
+    // Pulso idle: el visual siempre respira aunque no haya música
+    const idlePulse = 0.22 + Math.sin(time * 1.1) * 0.1 + Math.sin(time * 0.37) * 0.06;
+
+    const bassLerp = isPlaying ? 0.28 : 0.12;
+    smoothBass = THREE.MathUtils.lerp(smoothBass, isPlaying ? bands.rawBass : idlePulse * 0.3, bassLerp);
+    smoothMid = THREE.MathUtils.lerp(smoothMid, isPlaying ? bands.rawMid : idlePulse * 0.55, 0.16);
+    smoothTreble = THREE.MathUtils.lerp(smoothTreble, isPlaying ? bands.rawTreble : idlePulse * 0.2, 0.18);
     smoothEnergy = THREE.MathUtils.lerp(
       smoothEnergy,
-      (bands.rawBass + bands.rawMid + bands.rawTreble) / 3,
+      isPlaying ? (bands.rawBass + bands.rawMid + bands.rawTreble) / 3 : idlePulse * 0.4,
       0.2
     );
 
-    const beat = audioEngine.beatDetector.update(bands.rawBass, bands.rawTreble, time, isPlaying);
+    const beat = audioEngine.beatDetector.update(bands.rawBass, bands.rawTreble, time, isPlaying, delta);
 
-    // Mezcla: capa orgánica suave + punch instantáneo del kick/beat
-    const displayBass = Math.max(smoothBass, beat.beatPulse * bands.rawBass * 0.85);
-    const displayMid = smoothMid + beat.rhythmWave * 0.12 + beat.offbeatPulse * 0.2;
-    const displayTreble = smoothTreble + beat.offbeatPulse * 0.15;
+    const offbeat = beat.offbeatPulse ?? 0;
+    const displayBass = isPlaying
+      ? Math.max(smoothBass, beat.beatPulse * bands.rawBass * 0.85)
+      : smoothBass;
+    const displayMid = smoothMid + beat.rhythmWave * 0.12 + offbeat * 0.2;
+    const displayTreble = smoothTreble + offbeat * 0.15;
     const energy = Math.max(smoothEnergy, displayBass * 0.4 + displayMid * 0.35 + displayTreble * 0.25);
 
     if (beat.isBeat && settings.isStrobeEnabled) {
@@ -336,13 +340,14 @@ export function createVisualizer(container, settingsManager) {
     wireMaterial.uniforms.uOpacity.value = 0.06 + displayTreble * 0.4 + beat.currentBeat * 0.15;
 
     // Escala: respuesta continua al volumen + golpe en el beat
-    const targetScale =
+    let targetScale =
       1.0 +
       displayBass * 0.48 +
       displayMid * 0.18 +
       smoothEnergy * 0.15 +
       beat.currentBeat * 0.42 +
       beat.beatPulse * 0.35;
+    if (!Number.isFinite(targetScale)) targetScale = 1.0;
     const scaleLerp = beat.currentBeat > 0.45 || beat.isBeat ? 0.52 : 0.16;
     const currentScale = visualizerMesh.scale.x;
     visualizerMesh.scale.setScalar(THREE.MathUtils.lerp(currentScale, targetScale, scaleLerp));
@@ -417,6 +422,8 @@ export function createVisualizer(container, settingsManager) {
   window.addEventListener('resize', onResize);
 
   applyPreset(settingsManager.get().preset);
+
+  renderer.debug.checkShaderErrors = true;
 
   return { applyPreset, start, onResize };
 }
