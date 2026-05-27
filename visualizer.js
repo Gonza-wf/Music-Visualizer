@@ -64,6 +64,8 @@ uniform float uEnergy;
 uniform float uBeat;
 uniform float uBeatPhase;
 uniform float uBeatPulse;
+uniform float uDrop;
+uniform float uImpact;
 
 varying vec3 vNormal;
 varying float vDisplacement;
@@ -74,41 +76,43 @@ ${NOISE_CHUNK}
 void main() {
   vNormal = normal;
 
-  // Capa orgánica continua (siempre viva, no se apaga con el beat)
-  float baseNoise = snoise(position * 0.25 + uTime * 0.14);
-  float breath = baseNoise * (0.12 + uMid * 0.38);
+  // Respiración orgánica continua (medios + energía)
+  float baseNoise = snoise(position * 0.25 + uTime * 0.12);
+  float breath = baseNoise * (0.14 + uMid * 0.42);
 
-  // Estiramiento por bajos + punch rítmico encima
-  float kickAccent = pow(max(0.0, 1.0 - uBeatPhase), 2.0) * uBeatPulse;
-  float stretchIntensity = smoothstep(0.35, 0.9, uBass) * (0.32 + uBeat * 0.55);
-  stretchIntensity += kickAccent * 0.55;
+  // Kick + drop: estiramiento vertical (prioridad a golpes fuertes)
+  float kickAccent = pow(max(0.0, 1.0 - uBeatPhase), 2.2) * uBeatPulse;
+  float dropAccent = uDrop * (0.85 + uImpact * 0.4);
+  float stretchIntensity = smoothstep(0.32, 0.88, uBass) * (0.28 + uBeat * 0.5);
+  stretchIntensity += kickAccent * 0.65 + dropAccent * 0.95;
 
-  // Patrones en superficie (sin atan(y,x) — incompatible WebGL1)
-  float twist = snoise(vec3(position.x * 0.7, position.y * 0.7 + uTime * 0.2, position.z)) * uMid * 0.22;
-  float rings = sin((position.x * 2.8 + position.y * 3.2) + uTime * 0.6 + uMid * 4.0) * uMid * 0.12;
+  // Medios: torsión y anillos (patrones vivos)
+  float twist = snoise(vec3(position.x * 0.7, position.y * 0.7 + uTime * 0.18, position.z)) * uMid * 0.28;
+  float rings = sin((position.x * 2.8 + position.y * 3.2) + uTime * 0.55 + uMid * 5.0) * uMid * 0.16;
 
   vec3 stretchPos = position;
-  stretchPos.y *= 1.0 + stretchIntensity * 0.85;
-  stretchPos.x *= 1.0 - stretchIntensity * 0.16;
-  stretchPos.z *= 1.0 - stretchIntensity * 0.16;
+  stretchPos.y *= 1.0 + stretchIntensity * 0.9;
+  stretchPos.x *= 1.0 - stretchIntensity * 0.17;
+  stretchPos.z *= 1.0 - stretchIntensity * 0.17;
 
-  float warpNoise = snoise(stretchPos * 0.6 - uTime * 0.38);
-  float warp = warpNoise * (uEnergy * 0.48) * (1.0 + uBeat * 0.4 + kickAccent * 0.3);
+  float warpNoise = snoise(stretchPos * 0.55 - uTime * 0.32);
+  float warp = warpNoise * (uEnergy * 0.52) * (1.0 + uBeat * 0.45 + dropAccent * 0.5);
 
-  float trebleRipples = snoise(position * 1.5 + uTime * 2.4) * uTreble * 0.2;
+  // Agudos: textura fina en superficie
+  float trebleRipples = snoise(position * 1.6 + uTime * 2.6) * uTreble * 0.24;
 
   float totalDisp = breath + warp + trebleRipples + twist + rings;
-  totalDisp = clamp(totalDisp, -0.75, 0.95);
+  totalDisp = clamp(totalDisp, -0.8, 1.05);
 
-  float globalScale = 1.0 + stretchIntensity * 0.12 + uEnergy * 0.08 + kickAccent * 0.1;
+  float globalScale = 1.0 + stretchIntensity * 0.14 + uEnergy * 0.1 + dropAccent * 0.18;
 
   vDisplacement = totalDisp;
   vPosition = position;
 
   vec3 newPosition = position * globalScale + normal * totalDisp;
-  newPosition.y *= 1.0 + stretchIntensity * 0.38;
-  newPosition.x *= 1.0 - stretchIntensity * 0.11;
-  newPosition.z *= 1.0 - stretchIntensity * 0.11;
+  newPosition.y *= 1.0 + stretchIntensity * 0.42 + dropAccent * 0.15;
+  newPosition.x *= 1.0 - stretchIntensity * 0.12;
+  newPosition.z *= 1.0 - stretchIntensity * 0.12;
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
 }
@@ -124,6 +128,8 @@ uniform float uOpacity;
 uniform float uBeat;
 uniform float uBeatPhase;
 uniform float uBeatPulse;
+uniform float uDrop;
+uniform float uImpact;
 
 varying vec3 vNormal;
 varying float vDisplacement;
@@ -136,21 +142,20 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 void main() {
-  // Color vivo: deriva continua + patrones de deformación + acentos de beat
-  float hue = fract(uTime * 0.05 + vDisplacement * 0.14 + uBeat * 0.18 + uBeatPhase * 0.06);
-  float saturation = 0.82 + uMid * 0.12;
-  float value = 0.12 + uBass * 0.22 + uEnergy * 0.1 + vDisplacement * 0.07 + uBeatPulse * 0.14;
-  value = clamp(value, 0.05, 0.58);
+  float hue = fract(uTime * 0.04 + vDisplacement * 0.16 + uBeat * 0.2 + uDrop * 0.12);
+  float saturation = 0.8 + uMid * 0.15 + uTreble * 0.05;
+  float value = 0.13 + uBass * 0.24 + uEnergy * 0.1 + vDisplacement * 0.08;
+  value += uBeatPulse * 0.16 + uDrop * 0.22 + uImpact * 0.1;
+  value = clamp(value, 0.06, 0.6);
 
   vec3 color = hsv2rgb(vec3(hue, saturation, value));
 
-  // Bandas de patrón en la superficie
-  float bands = sin(vDisplacement * 12.0 + uTime * 2.0) * 0.5 + 0.5;
-  color *= 0.92 + bands * uMid * 0.18;
+  float bands = sin(vDisplacement * 14.0 + uTime * 1.8 + uMid * 2.0) * 0.5 + 0.5;
+  color *= 0.9 + bands * uMid * 0.22;
 
   float rim = 1.0 - max(dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0);
-  rim = smoothstep(0.6, 1.0, rim);
-  color += color * rim * (0.35 + uTreble * 0.25 + uBeatPulse * 0.2);
+  rim = smoothstep(0.58, 1.0, rim);
+  color += color * rim * (0.3 + uTreble * 0.3 + uDrop * 0.35);
 
   gl_FragColor = vec4(color, uOpacity);
 }
@@ -210,7 +215,9 @@ export function createVisualizer(container, settingsManager) {
       uOpacity: { value: 1.0 },
       uBeat: { value: 0 },
       uBeatPhase: { value: 0 },
-      uBeatPulse: { value: 0 }
+      uBeatPulse: { value: 0 },
+      uDrop: { value: 0 },
+      uImpact: { value: 0 }
     },
     transparent: true
   });
@@ -244,10 +251,9 @@ export function createVisualizer(container, settingsManager) {
   scene.add(bgPlane);
 
   const clock = new THREE.Clock();
-  let smoothBass = 0;
-  let smoothMid = 0;
-  let smoothTreble = 0;
-  let smoothEnergy = 0;
+  let envBass = 0;
+  let envMid = 0;
+  let envTreble = 0;
   let bgFlashOpacity = 0;
   let lastStrobeColor = 0;
   let animationId = null;
@@ -286,6 +292,11 @@ export function createVisualizer(container, settingsManager) {
     rgbShiftPass.enabled = p.rgbShift;
   }
 
+  function envelope(current, target, attack, release) {
+    const rate = target > current ? attack : release;
+    return THREE.MathUtils.lerp(current, target, rate);
+  }
+
   function updateUniforms(meshMat, time, bass, mid, treble, energy, beat) {
     meshMat.uniforms.uTime.value = time;
     meshMat.uniforms.uBass.value = bass;
@@ -295,6 +306,8 @@ export function createVisualizer(container, settingsManager) {
     meshMat.uniforms.uBeat.value = beat.currentBeat;
     meshMat.uniforms.uBeatPhase.value = beat.beatPhase;
     meshMat.uniforms.uBeatPulse.value = beat.beatPulse;
+    meshMat.uniforms.uDrop.value = beat.dropPulse ?? 0;
+    meshMat.uniforms.uImpact.value = beat.impactLevel ?? 0;
   }
 
   function animate(audioEngine) {
@@ -306,64 +319,85 @@ export function createVisualizer(container, settingsManager) {
     const bands = audioEngine.getFrequencyBands();
     const isPlaying = audioEngine.getIsPlaying();
 
-    // Pulso idle: el visual siempre respira aunque no haya música
-    const idlePulse = 0.22 + Math.sin(time * 1.1) * 0.1 + Math.sin(time * 0.37) * 0.06;
+    const idlePulse = 0.2 + Math.sin(time * 0.9) * 0.08;
 
-    const bassLerp = isPlaying ? 0.28 : 0.12;
-    smoothBass = THREE.MathUtils.lerp(smoothBass, isPlaying ? bands.rawBass : idlePulse * 0.3, bassLerp);
-    smoothMid = THREE.MathUtils.lerp(smoothMid, isPlaying ? bands.rawMid : idlePulse * 0.55, 0.16);
-    smoothTreble = THREE.MathUtils.lerp(smoothTreble, isPlaying ? bands.rawTreble : idlePulse * 0.2, 0.18);
-    smoothEnergy = THREE.MathUtils.lerp(
-      smoothEnergy,
-      isPlaying ? (bands.rawBass + bands.rawMid + bands.rawTreble) / 3 : idlePulse * 0.4,
-      0.2
+    // Envelopes: ataque rápido, release lento — cada capa vive
+    if (isPlaying) {
+      envBass = envelope(envBass, bands.rawBass, 0.42, 0.14);
+      envMid = envelope(envMid, bands.rawMid, 0.35, 0.12);
+      envTreble = envelope(envTreble, bands.rawTreble, 0.38, 0.16);
+    } else {
+      envBass = envelope(envBass, idlePulse * 0.28, 0.1, 0.08);
+      envMid = envelope(envMid, idlePulse * 0.5, 0.1, 0.08);
+      envTreble = envelope(envTreble, idlePulse * 0.18, 0.1, 0.08);
+    }
+
+    const beat = audioEngine.beatDetector.update(
+      bands.rawBass, bands.rawMid, bands.rawTreble, time, isPlaying, delta
     );
 
-    const beat = audioEngine.beatDetector.update(bands.rawBass, bands.rawTreble, time, isPlaying, delta);
+    const drop = beat.dropPulse ?? 0;
+    const impact = beat.impactLevel ?? 0;
+    const snare = beat.snarePulse ?? 0;
+    const midHit = beat.midPulse ?? 0;
 
-    const offbeat = beat.offbeatPulse ?? 0;
+    // Capas mezcladas: bajos dominan, medios/agudos añaden vida
     const displayBass = isPlaying
-      ? Math.max(smoothBass, beat.beatPulse * bands.rawBass * 0.85)
-      : smoothBass;
-    const displayMid = smoothMid + beat.rhythmWave * 0.12 + offbeat * 0.2;
-    const displayTreble = smoothTreble + offbeat * 0.15;
-    const energy = Math.max(smoothEnergy, displayBass * 0.4 + displayMid * 0.35 + displayTreble * 0.25);
+      ? Math.max(envBass, beat.beatPulse * bands.rawBass, drop * bands.rawBass * 0.8)
+      : envBass;
+    const displayMid = envMid + beat.rhythmWave * 0.14 + midHit * 0.35 + snare * 0.12;
+    const displayTreble = envTreble + snare * 0.28 + (beat.trebleDelta > 0.03 ? beat.trebleDelta * 0.4 : 0);
+    const energy = displayBass * 0.5 + displayMid * 0.32 + displayTreble * 0.18;
 
-    if (beat.isBeat && settings.isStrobeEnabled) {
-      const flashIntensity = THREE.MathUtils.clamp(bands.rawBass * 2.0, 0.5, 0.95);
+    const hitFlash = beat.isBeat || beat.isDrop;
+    if (hitFlash && settings.isStrobeEnabled) {
+      const flashIntensity = THREE.MathUtils.clamp(
+        (beat.isDrop ? 0.95 : bands.rawBass * 2.0), 0.5, 0.98
+      );
       bgFlashOpacity = Math.max(bgFlashOpacity, flashIntensity);
       lastStrobeColor = Math.floor(Math.random() * STROBE_COLORS.length);
     }
 
     updateUniforms(material, time, displayBass, displayMid, displayTreble, energy, beat);
     updateUniforms(wireMaterial, time, displayBass, displayMid, displayTreble, energy, beat);
-    wireMaterial.uniforms.uOpacity.value = 0.06 + displayTreble * 0.4 + beat.currentBeat * 0.15;
+    wireMaterial.uniforms.uOpacity.value = 0.05 + displayTreble * 0.45 + snare * 0.25 + drop * 0.15;
 
-    // Escala: respuesta continua al volumen + golpe en el beat
+    // Escala: drops > kicks > volumen continuo
     let targetScale =
       1.0 +
-      displayBass * 0.48 +
-      displayMid * 0.18 +
-      smoothEnergy * 0.15 +
-      beat.currentBeat * 0.42 +
-      beat.beatPulse * 0.35;
+      displayBass * 0.42 +
+      displayMid * 0.14 +
+      displayTreble * 0.06 +
+      beat.beatPulse * 0.48 +
+      drop * 0.72 +
+      impact * 0.35;
     if (!Number.isFinite(targetScale)) targetScale = 1.0;
-    const scaleLerp = beat.currentBeat > 0.45 || beat.isBeat ? 0.52 : 0.16;
-    const currentScale = visualizerMesh.scale.x;
-    visualizerMesh.scale.setScalar(THREE.MathUtils.lerp(currentScale, targetScale, scaleLerp));
-    wireMesh.scale.setScalar(visualizerMesh.scale.x * (1.03 + displayTreble * 0.18 + beat.beatPulse * 0.06));
 
-    // Rotación fluida + empuje en beats
-    const rTime = time * settings.cameraSpeedMult;
-    visualizerMesh.rotation.x = rTime * 0.09 + displayBass * 0.35 + beat.beatRotation + beat.extraRotation;
-    visualizerMesh.rotation.y = rTime * 0.13 + displayMid * 0.28 + beat.beatRotation * 1.25 + beat.extraRotation * 1.15;
-    visualizerMesh.rotation.z = Math.sin(rTime * 0.07) * displayMid * 0.15 + beat.offbeatPulse * 0.08;
-    wireMesh.rotation.x = rTime * 0.1 + displayBass * 0.32 + beat.beatRotation * 1.08;
-    wireMesh.rotation.y = rTime * 0.12 + displayMid * 0.25 + beat.beatRotation * 1.35;
+    const scaleLerp = drop > 0.3 || beat.beatPulse > 0.5 ? 0.58 : 0.18;
+    visualizerMesh.scale.setScalar(
+      THREE.MathUtils.lerp(visualizerMesh.scale.x, targetScale, scaleLerp)
+    );
+    wireMesh.scale.setScalar(visualizerMesh.scale.x * (1.025 + displayTreble * 0.14 + snare * 0.06));
 
-    particles.rotation.y = rTime * 0.035 + beat.beatRotation * 0.6;
-    particles.rotation.x = Math.sin(rTime * 0.05) * displayBass * 0.2;
-    const pScale = 1.0 + displayBass * 1.55 + smoothEnergy * 0.35 + beat.beatPulse * 0.25;
+    // Orientación: tilt impulsivo en golpes, casi sin giro continuo
+    const cam = settings.cameraSpeedMult;
+    if (isPlaying) {
+      const phaseWobble = Math.sin(beat.beatPhase * Math.PI * 2) * displayMid * 0.035;
+      visualizerMesh.rotation.x = beat.tiltX + phaseWobble + time * 0.012 * cam;
+      visualizerMesh.rotation.y = beat.tiltY + time * 0.015 * cam;
+      visualizerMesh.rotation.z = snare * 0.06 + midHit * 0.04;
+    } else {
+      visualizerMesh.rotation.x = Math.sin(time * 0.35) * 0.06;
+      visualizerMesh.rotation.y = Math.sin(time * 0.28) * 0.05;
+      visualizerMesh.rotation.z = 0;
+    }
+    wireMesh.rotation.x = visualizerMesh.rotation.x * 1.04;
+    wireMesh.rotation.y = visualizerMesh.rotation.y * 1.04;
+    wireMesh.rotation.z = visualizerMesh.rotation.z * 1.02;
+
+    particles.rotation.y = time * 0.008 * cam + beat.tiltY * 0.3;
+    particles.rotation.x = Math.sin(time * 0.04) * displayBass * 0.08;
+    const pScale = 1.0 + displayBass * 1.3 + drop * 0.45 + energy * 0.25;
     particles.scale.set(pScale, pScale, pScale);
 
     if (settings.isStrobeEnabled) {
@@ -384,12 +418,12 @@ export function createVisualizer(container, settingsManager) {
     }
     scene.background = bgColor;
 
-    const targetFov = 70 + displayBass * 11 + beat.beatPulse * 32 + beat.currentBeat * 38;
-    camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.15);
+    const targetFov = 70 + displayBass * 9 + beat.beatPulse * 28 + drop * 45 + impact * 18;
+    camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, drop > 0.2 ? 0.28 : 0.14);
     camera.updateProjectionMatrix();
 
-    if (displayBass > 0.55) {
-      const shake = (displayBass - 0.55) * (1.2 + beat.currentBeat);
+    if (displayBass > 0.5 && (beat.beatPulse > 0.15 || drop > 0.15)) {
+      const shake = (displayBass - 0.5) * (impact + drop * 0.5) * 1.8;
       camera.position.x = (Math.random() - 0.5) * shake;
       camera.position.y = (Math.random() - 0.5) * shake;
     } else {
@@ -397,11 +431,12 @@ export function createVisualizer(container, settingsManager) {
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0, 0.1);
     }
 
-    bloomPass.strength = settings.glowStrength + displayBass * 0.16 * (settings.glowStrength / 0.3) + smoothEnergy * 0.06;
+    bloomPass.strength = settings.glowStrength + displayBass * 0.14 + drop * 0.12 + energy * 0.05;
 
-    const targetShift = smoothTreble * 0.002 + (beat.trebleDelta > 0.03 ? beat.trebleDelta * 0.15 : 0);
+    const targetShift = displayTreble * 0.0025 + (beat.isDrop ? 0.012 : 0);
+    const trebleHit = beat.trebleDelta > 0.03 ? beat.trebleDelta * 0.18 : 0;
     rgbShiftPass.uniforms.amount.value = THREE.MathUtils.lerp(
-      rgbShiftPass.uniforms.amount.value, targetShift, 0.35
+      rgbShiftPass.uniforms.amount.value, targetShift + trebleHit, 0.35
     );
 
     composer.render();
